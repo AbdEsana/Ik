@@ -16,13 +16,20 @@ public:
     void CursorPosCallback(cg3d::Viewport* viewport, int x, int y, bool dragging, int* buttonState)  override;
     void KeyCallback(cg3d::Viewport* viewport, int x, int y, int key, int scancode, int action, int mods) override;
      Eigen::Vector3f GetSpherePos();
+	 bool isPossible();
 private:
     std::shared_ptr<Movable> root;
-    std::shared_ptr<cg3d::Model> sphere1 ,cube;
+    std::shared_ptr<cg3d::Model> sphere1 ,cube, tip;
     std::shared_ptr<cg3d::AutoMorphingModel> autoCube;
     std::vector<std::shared_ptr<cg3d::Model>> cyls, axis;
     int pickedIndex = 0;
     int tipIndex = 0;
+	// Declare a global destination position and a tolerance for the IK solver
+	Eigen::Vector3f destination;
+	double delta = 0.09;
+	// Declare a global flag for the IK solver animation
+	bool solve_IK = false;
+	bool stop = false;
     Eigen::VectorXi EMAP;
     Eigen::MatrixXi F,E,EF,EI;
     Eigen::VectorXi EQ;

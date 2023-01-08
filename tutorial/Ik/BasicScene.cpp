@@ -1,4 +1,5 @@
 #include "BasicScene.h"
+#define _USE_MATH_DEFINES
 #include <Eigen/src/Core/Matrix.h>
 #include <edges.h>
 #include <memory>
@@ -27,7 +28,7 @@
 #include "igl/collapse_edge.h"
 #include "igl/edge_collapse_is_valid.h"
 #include "igl/write_triangle_mesh.h"
-
+#include <math.h>
 // #include "AutoMorphingModel.h"
 
 using namespace cg3d;
@@ -88,6 +89,14 @@ void BasicScene::Init(float fov, int width, int height, float near, float far)
         cyls[i]->SetCenter(Eigen::Vector3f(-0.8f*scaleFactor,0,0));
         cyls[i-1]->AddChild(cyls[i]);
     }
+	//tip of the arm
+	cyls.push_back(Model::Create("tip", sphereMesh, material));
+	cyls[3]->Scale(0.4);
+	cyls[3]->isHidden = true;
+	cyls[3]->Translate(0.8f * scaleFactor, Axis::X);
+	//cyls[3]->SetCenter(Eigen::Vector3f(-0.8f * scaleFactor, 0, 0));
+	cyls[2]->AddChild(cyls[3]);
+
     cyls[0]->Translate({0.8f*scaleFactor,0,0});
 
     auto morphFunc = [](Model* model, cg3d::Visitor* visitor) {
@@ -114,22 +123,8 @@ void BasicScene::Init(float fov, int width, int height, float near, float far)
     cube->mode =1   ; 
     auto mesh = cube->GetMeshList();
 
-    //autoCube->AddOverlay(points,edges,colors);
-    // mesh[0]->data.push_back({V,F,V,E});
-    int num_collapsed;
 
-  // Function to reset original mesh and data structures
-    V = mesh[0]->data[0].vertices;
-    F = mesh[0]->data[0].faces;
-   // igl::read_triangle_mesh("data/cube.off",V,F);
-    igl::edge_flaps(F,E,EMAP,EF,EI);
-    std::cout<< "vertices: \n" << V <<std::endl;
-    std::cout<< "faces: \n" << F <<std::endl;
-    
-    std::cout<< "edges: \n" << E.transpose() <<std::endl;
-    std::cout<< "edges to faces: \n" << EF.transpose() <<std::endl;
-    std::cout<< "faces to edges: \n "<< EMAP.transpose()<<std::endl;
-    std::cout<< "edges indices: \n" << EI.transpose() <<std::endl;
+  
 
 }
 
@@ -142,7 +137,52 @@ void BasicScene::Update(const Program& program, const Eigen::Matrix4f& proj, con
     program.SetUniform1f("specular_exponent", 5.0f);
     program.SetUniform4f("light_position", 0.0, 15.0f, 0.0, 1.0f);
 //    cyl->Rotate(0.001f, Axis::Y);
-    cube->Rotate(0.1f, Axis::XYZ);
+	destination = autoCube->GetTranslation();
+
+	if (solve_IK & !stop) {
+		Eigen::Vector3f end_effector = cyls[3]->GetTranslation();
+		double distance = (end_effector - destination).norm();
+		if (distance > delta) {
+			bool reached = false;
+			//if (!reached) {
+				//auto system = camera->GetRotation().transpose();
+			// Solve the IK problem with the Cyclic Coordinate Descent method
+				end_effector = cyls[3]->GetTranslation();
+				distance = (end_effector - destination).norm();
+				if (distance < delta) {
+					reached = true;
+					solve_IK = false;
+					stop = true;
+					std::cout << "reached destination at distance " << distance << std::endl;
+				}
+				else {
+					Eigen::Vector3f u = (end_effector - destination ).normalized();
+					//currently either spins into oblivion or keeps moving until it hits the cube on accident
+					double angle;
+					Eigen::Vector3f w;
+					for (int i = 2; i > 0; i--) {
+						//might be problem might need to add tip positions
+						Eigen::Vector3f v = cyls[i-1]->GetTranslation() - cyls[i]->GetTranslation();
+						angle = std::acos(u.dot(v.normalized()));
+						if (angle > 0.01f)
+						{
+							w = u.cross(v).normalized();
+							//cyls[i]->SetTransform(cyls[i]->GetTransform() * Eigen::AngleAxisf(std::min(angle, 0.1), w));
+							cyls[i]->RotateByDegree((std::min(angle, 0.1)), w);
+
+						}
+						u = cyls[i]->GetRotation() * u;
+					}
+					//cyls[0]->RotateByDegree((std::min(angle, 0.1)), Eigen::Vector3f::UnitY());
+					cyls[0]->RotateByDegree((std::min(angle, 0.1)), w);
+				}
+			//}
+		}
+		else
+		{
+			std::cout << "already at destination" << std::endl;
+		}
+	}
 }
 
 void BasicScene::MouseCallback(Viewport* viewport, int x, int y, int button, int action, int mods, int buttonState[])
@@ -239,7 +279,7 @@ void BasicScene::KeyCallback(Viewport* viewport, int x, int y, int key, int scan
                 cyls[pickedIndex]->RotateInSystem(system, -0.1f, Axis::X);
                 break;
             case GLFW_KEY_LEFT:
-                cyls[pickedIndex]->RotateInSystem(system, 0.1f, Axis::Y);
+                cyls[pickedIndex]->RotateByDegree(0.1f * 180.0 / M_PI, Axis::Y);
                 break;
             case GLFW_KEY_RIGHT:
                 cyls[pickedIndex]->RotateInSystem(system, -0.1f, Axis::Y);
@@ -254,20 +294,33 @@ void BasicScene::KeyCallback(Viewport* viewport, int x, int y, int key, int scan
                 camera->TranslateInSystem(system, {-0.1f, 0, 0});
                 break;
             case GLFW_KEY_D:
-                camera->TranslateInSystem(system, {0.1f, 0, 0});
+				//print dest position
+				std::cout << "Destination position: (" << destination[0] << ", " << destination[1] << ", " << destination[2] << ")" << std::endl;
                 break;
+			case GLFW_KEY_P:
+				//print pickedlink rotation matrices
+				std::cout << "Rotation of Link "<< pickedIndex <<" : \n"<< cyls[pickedIndex]->GetRotation();
+				break;
+			case GLFW_KEY_SPACE:
+				if (isPossible()) {
+					solve_IK = !solve_IK;
+				}
+				else {
+					std::cout << "cannot reach" << std::endl;
+				}
+				break;
             case GLFW_KEY_B:
                 camera->TranslateInSystem(system, {0, 0, 0.1f});
                 break;
             case GLFW_KEY_F:
                 camera->TranslateInSystem(system, {0, 0, -0.1f});
                 break;
-            case GLFW_KEY_1:
-                if( pickedIndex > 0)
-                  pickedIndex--;
-                break;
+            case GLFW_KEY_T:
+				//print arm tip position
+				std::cout << "Tip Position: (" << cyls[3]->GetTranslation()[0] << ", " << cyls[3]->GetTranslation()[1] << ", " << cyls[3]->GetTranslation()[2] << ")\n" << std::endl;
+				break;
             case GLFW_KEY_N:
-				if (pickedIndex < cyls.size() - 1) {
+				if (pickedIndex < 2) {
 					pickedIndex++;
 				}
 				else {
@@ -303,3 +356,12 @@ Eigen::Vector3f BasicScene::GetSpherePos()
       res = cyls[tipIndex]->GetRotation()*l;   
       return res;  
 }
+
+bool BasicScene::isPossible() {
+	double distance =  destination.norm();
+	if (distance <= 4.4)
+		return true;
+
+	return false;
+}
+
