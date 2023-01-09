@@ -59,7 +59,7 @@ void BasicScene::Init(float fov, int width, int height, float near, float far)
     auto sphereMesh{IglLoader::MeshFromFiles("sphere_igl", "data/sphere.obj")};
     auto cylMesh{IglLoader::MeshFromFiles("cyl_igl","data/xcylinder.obj")};
     auto cubeMesh{IglLoader::MeshFromFiles("cube_igl","data/cube_old.obj")};
-    sphere1 = Model::Create( "sphere",sphereMesh, material);    
+    sphere1 = Model::Create( "sphere",sphereMesh, material);   
     cube = Model::Create( "cube", cubeMesh, material);
     
     //Axis
@@ -124,8 +124,6 @@ void BasicScene::Init(float fov, int width, int height, float near, float far)
     auto mesh = cube->GetMeshList();
 
 
-  
-
 }
 
 void BasicScene::Update(const Program& program, const Eigen::Matrix4f& proj, const Eigen::Matrix4f& view, const Eigen::Matrix4f& model)
@@ -139,48 +137,39 @@ void BasicScene::Update(const Program& program, const Eigen::Matrix4f& proj, con
 //    cyl->Rotate(0.001f, Axis::Y);
 	destination = autoCube->GetTranslation();
 
-	if (solve_IK & !stop) {
+	if (solve_IK) {
 		Eigen::Vector3f end_effector = cyls[3]->GetTranslation();
 		double distance = (end_effector - destination).norm();
 		if (distance > delta) {
-			bool reached = false;
-			//if (!reached) {
-				//auto system = camera->GetRotation().transpose();
-			// Solve the IK problem with the Cyclic Coordinate Descent method
-				end_effector = cyls[3]->GetTranslation();
-				distance = (end_effector - destination).norm();
-				if (distance < delta) {
-					reached = true;
-					solve_IK = false;
-					stop = true;
-					std::cout << "reached destination at distance " << distance << std::endl;
+			stop = false;
+			
+			auto system = camera->GetRotation().transpose();
+			
+				
+			end_effector = cyls[3]->GetTranslation();
+			Eigen::Vector3f u; 
+			double angle;
+			Eigen::Vector3f w;
+			for (int i = 2; i >= 0; i--) {
+				//might be problem might need to add tip positions //nvm 
+				u = (cyls[i]->GetTranslation() - destination).normalized();
+				Eigen::Vector3f v = cyls[i]->GetTranslation() - cyls[3]->GetTranslation();
+				angle = std::acos(u.dot(v.normalized()));
+				if (angle > 0.01f)
+				{
+					w = v.cross(u).normalized();
+					
+					cyls[i]->Tout.rotate(Eigen::AngleAxisf(std::min(angle, 0.1), w));
+					cyls[i]->PropagateTransform();
 				}
-				else {
-					Eigen::Vector3f u = (end_effector - destination ).normalized();
-					//currently either spins into oblivion or keeps moving until it hits the cube on accident
-					double angle;
-					Eigen::Vector3f w;
-					for (int i = 2; i > 0; i--) {
-						//might be problem might need to add tip positions
-						Eigen::Vector3f v = cyls[i-1]->GetTranslation() - cyls[i]->GetTranslation();
-						angle = std::acos(u.dot(v.normalized()));
-						if (angle > 0.01f)
-						{
-							w = u.cross(v).normalized();
-							//cyls[i]->SetTransform(cyls[i]->GetTransform() * Eigen::AngleAxisf(std::min(angle, 0.1), w));
-							cyls[i]->RotateByDegree((std::min(angle, 0.1)), w);
-
-						}
-						u = cyls[i]->GetRotation() * u;
-					}
-					//cyls[0]->RotateByDegree((std::min(angle, 0.1)), Eigen::Vector3f::UnitY());
-					cyls[0]->RotateByDegree((std::min(angle, 0.1)), w);
-				}
-			//}
-		}
-		else
-		{
-			std::cout << "already at destination" << std::endl;
+				
+			}		
+			
+		}		
+		else if (distance < delta & !stop) {
+			
+			std::cout << "reached destination at distance " << distance << std::endl;
+			stop = true;
 		}
 	}
 }
@@ -279,7 +268,7 @@ void BasicScene::KeyCallback(Viewport* viewport, int x, int y, int key, int scan
                 cyls[pickedIndex]->RotateInSystem(system, -0.1f, Axis::X);
                 break;
             case GLFW_KEY_LEFT:
-                cyls[pickedIndex]->RotateByDegree(0.1f * 180.0 / M_PI, Axis::Y);
+                cyls[pickedIndex]->RotateInSystem(system, 0.1f, Axis::Y);
                 break;
             case GLFW_KEY_RIGHT:
                 cyls[pickedIndex]->RotateInSystem(system, -0.1f, Axis::Y);
@@ -302,7 +291,7 @@ void BasicScene::KeyCallback(Viewport* viewport, int x, int y, int key, int scan
 				std::cout << "Rotation of Link "<< pickedIndex <<" : \n"<< cyls[pickedIndex]->GetRotation();
 				break;
 			case GLFW_KEY_SPACE:
-				if (isPossible()) {
+				if (isPossible() || solve_IK == true) {
 					solve_IK = !solve_IK;
 				}
 				else {
@@ -327,24 +316,7 @@ void BasicScene::KeyCallback(Viewport* viewport, int x, int y, int key, int scan
 					pickedIndex = 0;
 				}
                 break;
-            case GLFW_KEY_3:
-                if( tipIndex >= 0)
-                {
-                  if(tipIndex == cyls.size())
-                    tipIndex--;
-                  sphere1->Translate(GetSpherePos());
-                  tipIndex--;
-                }
-                break;
-            case GLFW_KEY_4:
-                if(tipIndex < cyls.size())
-                {
-                    if(tipIndex < 0)
-                      tipIndex++;
-                    sphere1->Translate(GetSpherePos());
-                    tipIndex++;
-                }
-                break;
+            
         }
     }
 }
@@ -359,7 +331,7 @@ Eigen::Vector3f BasicScene::GetSpherePos()
 
 bool BasicScene::isPossible() {
 	double distance =  destination.norm();
-	if (distance <= 4.4)
+	if (distance <= 5)
 		return true;
 
 	return false;

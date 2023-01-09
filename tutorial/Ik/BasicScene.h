@@ -26,7 +26,7 @@ private:
     int tipIndex = 0;
 	// Declare a global destination position and a tolerance for the IK solver
 	Eigen::Vector3f destination;
-	double delta = 0.09;
+	float delta = 0.5f;
 	// Declare a global flag for the IK solver animation
 	bool solve_IK = false;
 	bool stop = false;
