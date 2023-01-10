@@ -24,9 +24,10 @@ private:
     std::vector<std::shared_ptr<cg3d::Model>> cyls, axis;
     int pickedIndex = 0;
     int tipIndex = 0;
+	int linkAmount = 3;
 	// Declare a global destination position and a tolerance for the IK solver
 	Eigen::Vector3f destination;
-	float delta = 0.5f;
+	float delta = 0.05f;
 	// Declare a global flag for the IK solver animation
 	bool solve_IK = false;
 	bool stop = false;

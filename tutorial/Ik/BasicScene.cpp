@@ -81,7 +81,7 @@ void BasicScene::Init(float fov, int width, int height, float near, float far)
     cyls[0]->SetCenter(Eigen::Vector3f(-0.8f*scaleFactor,0,0));
     root->AddChild(cyls[0]);
    
-    for(int i = 1;i < 3; i++)
+    for(int i = 1;i < linkAmount; i++)
     { 
         cyls.push_back( Model::Create("cyl", cylMesh, material));
         cyls[i]->Scale(scaleFactor,Axis::X);   
@@ -91,11 +91,11 @@ void BasicScene::Init(float fov, int width, int height, float near, float far)
     }
 	//tip of the arm
 	cyls.push_back(Model::Create("tip", sphereMesh, material));
-	cyls[3]->Scale(0.4);
-	cyls[3]->isHidden = true;
-	cyls[3]->Translate(0.8f * scaleFactor, Axis::X);
+	cyls[linkAmount]->Scale(0.4);
+	cyls[linkAmount]->isHidden = true;
+	cyls[linkAmount]->Translate(0.8f * scaleFactor, Axis::X);
 	//cyls[3]->SetCenter(Eigen::Vector3f(-0.8f * scaleFactor, 0, 0));
-	cyls[2]->AddChild(cyls[3]);
+	cyls[linkAmount-1]->AddChild(cyls[linkAmount]);
 
     cyls[0]->Translate({0.8f*scaleFactor,0,0});
 
@@ -138,7 +138,7 @@ void BasicScene::Update(const Program& program, const Eigen::Matrix4f& proj, con
 	destination = autoCube->GetTranslation();
 
 	if (solve_IK) {
-		Eigen::Vector3f end_effector = cyls[3]->GetTranslation();
+		Eigen::Vector3f end_effector = cyls[linkAmount]->GetTranslation();
 		double distance = (end_effector - destination).norm();
 		if (distance > delta) {
 			stop = false;
@@ -146,14 +146,14 @@ void BasicScene::Update(const Program& program, const Eigen::Matrix4f& proj, con
 			auto system = camera->GetRotation().transpose();
 			
 				
-			end_effector = cyls[3]->GetTranslation();
+			end_effector = cyls[linkAmount]->GetTranslation();
 			Eigen::Vector3f u; 
 			double angle;
 			Eigen::Vector3f w;
-			for (int i = 2; i >= 0; i--) {
+			for (int i = linkAmount-1; i >= 0; i--) {
 				//might be problem might need to add tip positions //nvm 
 				u = (cyls[i]->GetTranslation() - destination).normalized();
-				Eigen::Vector3f v = cyls[i]->GetTranslation() - cyls[3]->GetTranslation();
+				Eigen::Vector3f v = cyls[i]->GetTranslation() - cyls[linkAmount]->GetTranslation();
 				angle = std::acos(u.dot(v.normalized()));
 				if (angle > 0.01f)
 				{
@@ -306,10 +306,10 @@ void BasicScene::KeyCallback(Viewport* viewport, int x, int y, int key, int scan
                 break;
             case GLFW_KEY_T:
 				//print arm tip position
-				std::cout << "Tip Position: (" << cyls[3]->GetTranslation()[0] << ", " << cyls[3]->GetTranslation()[1] << ", " << cyls[3]->GetTranslation()[2] << ")\n" << std::endl;
+				std::cout << "Tip Position: (" << cyls[linkAmount]->GetTranslation()[0] << ", " << cyls[linkAmount]->GetTranslation()[1] << ", " << cyls[linkAmount]->GetTranslation()[2] << ")\n" << std::endl;
 				break;
             case GLFW_KEY_N:
-				if (pickedIndex < 2) {
+				if (pickedIndex < (linkAmount-1)) {
 					pickedIndex++;
 				}
 				else {
@@ -330,8 +330,10 @@ Eigen::Vector3f BasicScene::GetSpherePos()
 }
 
 bool BasicScene::isPossible() {
-	double distance =  destination.norm();
-	if (distance <= 5)
+	//float distance = ( axis[0]->GetTranslation()- destination).norm();
+	float distance =  destination.norm();
+	float reach = cyls[linkAmount]->GetTranslation().norm();
+	if (distance < reach)
 		return true;
 
 	return false;
